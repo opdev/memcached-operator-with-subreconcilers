@@ -99,6 +99,8 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
+	// TODO: turn into a subreconciler "setStatusToUnknown"
+
 	// Let's just set the status as Unknown when no status are available
 	if memcached.Status.Conditions == nil || len(memcached.Status.Conditions) == 0 {
 		meta.SetStatusCondition(&memcached.Status.Conditions, metav1.Condition{Type: typeAvailableMemcached, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
@@ -118,6 +120,8 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 	}
 
+	// TODO: turn into a subreconciler "addFinalizer"
+
 	// Let's add a finalizer. Then, we can define some operations which should
 	// occurs before the custom resource to be deleted.
 	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/finalizers
@@ -133,6 +137,8 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			return ctrl.Result{}, err
 		}
 	}
+
+	// TODO: turn into a subreconciler "handleDelete"
 
 	// Check if the Memcached instance is marked to be deleted, which is
 	// indicated by the deletion timestamp being set.
@@ -190,6 +196,8 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 		return ctrl.Result{}, nil
 	}
+
+	// TODO: turn into a subreconciler "reconcileDeployment"
 
 	// Check if the deployment already exists, if not create a new one
 	found := &appsv1.Deployment{}
@@ -269,6 +277,8 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// update. Also, it will help ensure the desired state on the cluster
 		return ctrl.Result{Requeue: true}, nil
 	}
+
+	// TODO: turn into a subreconciler "updateStatus"
 
 	// The following implementation will update the status
 	meta.SetStatusCondition(&memcached.Status.Conditions, metav1.Condition{Type: typeAvailableMemcached,
