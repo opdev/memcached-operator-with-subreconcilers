@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	cachev1alpha1 "github.com/example/memcached-operator/api/v1alpha1"
+	"github.com/opdev/subreconciler"
 )
 
 const memcachedFinalizer = "cache.example.com/finalizer"
@@ -99,25 +100,22 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	// TODO: turn into a subreconciler "setStatusToUnknown"
+	// Run the setStatusToUnknown subreconciler
+	result, err := r.setStatusToUnknown(ctx, req)
 
-	// Let's just set the status as Unknown when no status are available
-	if memcached.Status.Conditions == nil || len(memcached.Status.Conditions) == 0 {
-		meta.SetStatusCondition(&memcached.Status.Conditions, metav1.Condition{Type: typeAvailableMemcached, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
-		if err = r.Status().Update(ctx, memcached); err != nil {
-			log.Error(err, "Failed to update Memcached status")
-			return ctrl.Result{}, err
-		}
+	// Stop the reconciliation if needed.
+	if subreconciler.ShouldHaltOrRequeue(result, err) {
+		return subreconciler.Evaluate(result, err)
+	}
 
-		// Let's re-fetch the memcached Custom Resource after update the status
-		// so that we have the latest state of the resource on the cluster and we will avoid
-		// raise the issue "the object has been modified, please apply
-		// your changes to the latest version and try again" which would re-trigger the reconciliation
-		// if we try to update it again in the following operations
-		if err := r.Get(ctx, req.NamespacedName, memcached); err != nil {
-			log.Error(err, "Failed to re-fetch memcached")
-			return ctrl.Result{}, err
-		}
+	// Let's re-fetch the memcached Custom Resource after update the status
+	// so that we have the latest state of the resource on the cluster and we will avoid
+	// raise the issue "the object has been modified, please apply
+	// your changes to the latest version and try again" which would re-trigger the reconciliation
+	// if we try to update it again in the following operations
+	if err := r.Get(ctx, req.NamespacedName, memcached); err != nil {
+		log.Error(err, "Failed to re-fetch memcached")
+		return ctrl.Result{}, err
 	}
 
 	// TODO: turn into a subreconciler "addFinalizer"
@@ -291,6 +289,36 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// setStatusToUnknown is a function of type subreconciler.FnWithRequest
+func (r *MemcachedReconciler) setStatusToUnknown(ctx context.Context, req ctrl.Request) (*ctrl.Result, error) {
+	log := log.FromContext(ctx)
+	memcached := &cachev1alpha1.Memcached{}
+
+	// Fetch the latest version of the memcached resource
+	if err := r.Get(ctx, req.NamespacedName, memcached); err != nil {
+		if apierrors.IsNotFound(err) {
+			// If the custom resource is not found then, it usually means that it was deleted or not created
+			// In this way, we will stop the reconciliation
+			log.Info("memcached resource not found. Ignoring since object must be deleted")
+			return subreconciler.DoNotRequeue()
+		}
+		// Error reading the object - requeue the request.
+		log.Error(err, "Failed to get memcached")
+		return subreconciler.RequeueWithError(err)
+	}
+
+	// Let's just set the status as Unknown when no status are available
+	if memcached.Status.Conditions == nil || len(memcached.Status.Conditions) == 0 {
+		meta.SetStatusCondition(&memcached.Status.Conditions, metav1.Condition{Type: typeAvailableMemcached, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
+		if err := r.Status().Update(ctx, memcached); err != nil {
+			log.Error(err, "Failed to update Memcached status")
+			return subreconciler.RequeueWithError(err)
+		}
+	}
+
+	return subreconciler.ContinueReconciling()
 }
 
 // finalizeMemcached will perform the required operations before delete the CR.
