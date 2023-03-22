@@ -116,7 +116,7 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 	}
 
-	return ctrl.Result{}, nil
+	return subreconciler.Evaluate(subreconciler.DoNotRequeue())
 }
 
 // setStatusToUnknown is a function of type subreconciler.FnWithRequest
