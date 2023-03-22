@@ -81,25 +81,6 @@ type MemcachedReconciler struct {
 // - About Controllers: https://kubernetes.io/docs/concepts/architecture/controller/
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.14.1/pkg/reconcile
 func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
-
-	// Fetch the Memcached instance
-	// The purpose is check if the Custom Resource for the Kind Memcached
-	// is applied on the cluster if not we return nil to stop the reconciliation
-	memcached := &cachev1alpha1.Memcached{}
-	err := r.Get(ctx, req.NamespacedName, memcached)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			// If the custom resource is not found then, it usually means that it was deleted or not created
-			// In this way, we will stop the reconciliation
-			log.Info("memcached resource not found. Ignoring since object must be deleted")
-			return ctrl.Result{}, nil
-		}
-		// Error reading the object - requeue the request.
-		log.Error(err, "Failed to get memcached")
-		return ctrl.Result{}, err
-	}
-
 	// The list of subreconcilers for Memcached
 	subreconcilersForMemcached := []subreconciler.FnWithRequest{
 		r.setStatusToUnknown,
@@ -119,10 +100,8 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	return subreconciler.Evaluate(subreconciler.DoNotRequeue())
 }
 
-// setStatusToUnknown is a function of type subreconciler.FnWithRequest
-func (r *MemcachedReconciler) setStatusToUnknown(ctx context.Context, req ctrl.Request) (*ctrl.Result, error) {
+func (r *MemcachedReconciler) getLatestMemcached(ctx context.Context, req ctrl.Request, memcached *cachev1alpha1.Memcached) (*ctrl.Result, error) {
 	log := log.FromContext(ctx)
-	memcached := &cachev1alpha1.Memcached{}
 
 	// Fetch the latest version of the memcached resource
 	if err := r.Get(ctx, req.NamespacedName, memcached); err != nil {
@@ -135,6 +114,20 @@ func (r *MemcachedReconciler) setStatusToUnknown(ctx context.Context, req ctrl.R
 		// Error reading the object - requeue the request.
 		log.Error(err, "Failed to get memcached")
 		return subreconciler.RequeueWithError(err)
+	}
+
+	return subreconciler.ContinueReconciling()
+}
+
+// setStatusToUnknown is a function of type subreconciler.FnWithRequest
+func (r *MemcachedReconciler) setStatusToUnknown(ctx context.Context, req ctrl.Request) (*ctrl.Result, error) {
+	log := log.FromContext(ctx)
+	memcached := &cachev1alpha1.Memcached{}
+
+	// Fetch the latest Memcached
+	// If this fails, bubble up the reconcile results to the main reconciler
+	if r, err := r.getLatestMemcached(ctx, req, memcached); subreconciler.ShouldHaltOrRequeue(r, err) {
+		return r, err
 	}
 
 	// Let's just set the status as Unknown when no status are available
@@ -154,17 +147,10 @@ func (r *MemcachedReconciler) addFinalizer(ctx context.Context, req ctrl.Request
 	log := log.FromContext(ctx)
 	memcached := &cachev1alpha1.Memcached{}
 
-	// Fetch the latest version of the memcached resource
-	if err := r.Get(ctx, req.NamespacedName, memcached); err != nil {
-		if apierrors.IsNotFound(err) {
-			// If the custom resource is not found then, it usually means that it was deleted or not created
-			// In this way, we will stop the reconciliation
-			log.Info("memcached resource not found. Ignoring since object must be deleted")
-			return subreconciler.DoNotRequeue()
-		}
-		// Error reading the object - requeue the request.
-		log.Error(err, "Failed to get memcached")
-		return subreconciler.RequeueWithError(err)
+	// Fetch the latest Memcached
+	// If this fails, bubble up the reconcile results to the main reconciler
+	if r, err := r.getLatestMemcached(ctx, req, memcached); subreconciler.ShouldHaltOrRequeue(r, err) {
+		return r, err
 	}
 
 	// Let's add a finalizer. Then, we can define some operations which should
@@ -191,17 +177,10 @@ func (r *MemcachedReconciler) handleDelete(ctx context.Context, req ctrl.Request
 	log := log.FromContext(ctx)
 	memcached := &cachev1alpha1.Memcached{}
 
-	// Fetch the latest version of the memcached resource
-	if err := r.Get(ctx, req.NamespacedName, memcached); err != nil {
-		if apierrors.IsNotFound(err) {
-			// If the custom resource is not found then, it usually means that it was deleted or not created
-			// In this way, we will stop the reconciliation
-			log.Info("memcached resource not found. Ignoring since object must be deleted")
-			return subreconciler.DoNotRequeue()
-		}
-		// Error reading the object - requeue the request.
-		log.Error(err, "Failed to get memcached")
-		return subreconciler.RequeueWithError(err)
+	// Fetch the latest Memcached
+	// If this fails, bubble up the reconcile results to the main reconciler
+	if r, err := r.getLatestMemcached(ctx, req, memcached); subreconciler.ShouldHaltOrRequeue(r, err) {
+		return r, err
 	}
 
 	// Check if the Memcached instance is marked to be deleted, which is
@@ -269,17 +248,10 @@ func (r *MemcachedReconciler) reconcileDeployment(ctx context.Context, req ctrl.
 	log := log.FromContext(ctx)
 	memcached := &cachev1alpha1.Memcached{}
 
-	// Fetch the latest version of the memcached resource
-	if err := r.Get(ctx, req.NamespacedName, memcached); err != nil {
-		if apierrors.IsNotFound(err) {
-			// If the custom resource is not found then, it usually means that it was deleted or not created
-			// In this way, we will stop the reconciliation
-			log.Info("memcached resource not found. Ignoring since object must be deleted")
-			return subreconciler.DoNotRequeue()
-		}
-		// Error reading the object - requeue the request.
-		log.Error(err, "Failed to get memcached")
-		return subreconciler.RequeueWithError(err)
+	// Fetch the latest Memcached
+	// If this fails, bubble up the reconcile results to the main reconciler
+	if r, err := r.getLatestMemcached(ctx, req, memcached); subreconciler.ShouldHaltOrRequeue(r, err) {
+		return r, err
 	}
 
 	// Check if the deployment already exists, if not create a new one
@@ -369,17 +341,10 @@ func (r *MemcachedReconciler) updateStatus(ctx context.Context, req ctrl.Request
 	log := log.FromContext(ctx)
 	memcached := &cachev1alpha1.Memcached{}
 
-	// Fetch the latest version of the memcached resource
-	if err := r.Get(ctx, req.NamespacedName, memcached); err != nil {
-		if apierrors.IsNotFound(err) {
-			// If the custom resource is not found then, it usually means that it was deleted or not created
-			// In this way, we will stop the reconciliation
-			log.Info("memcached resource not found. Ignoring since object must be deleted")
-			return subreconciler.DoNotRequeue()
-		}
-		// Error reading the object - requeue the request.
-		log.Error(err, "Failed to get memcached")
-		return subreconciler.RequeueWithError(err)
+	// Fetch the latest Memcached
+	// If this fails, bubble up the reconcile results to the main reconciler
+	if r, err := r.getLatestMemcached(ctx, req, memcached); subreconciler.ShouldHaltOrRequeue(r, err) {
+		return r, err
 	}
 
 	// The following implementation will update the status
