@@ -100,44 +100,20 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	// Run the setStatusToUnknown subreconciler
-	result, err := r.setStatusToUnknown(ctx, req)
-
-	// Stop the reconciliation if needed.
-	if subreconciler.ShouldHaltOrRequeue(result, err) {
-		return subreconciler.Evaluate(result, err)
+	// The list of subreconcilers for Memcached
+	subreconcilersForMemcached := []subreconciler.FnWithRequest{
+		r.setStatusToUnknown,
+		r.addFinalizer,
+		r.handleDelete,
+		r.reconcileDeployment,
+		r.updateStatus,
 	}
 
-	// Run the addFinalizer subreconciler
-	result, err = r.addFinalizer(ctx, req)
-
-	// Stop the reconciliation if needed.
-	if subreconciler.ShouldHaltOrRequeue(result, err) {
-		return subreconciler.Evaluate(result, err)
-	}
-
-	// Run the handleDelete subreconciler
-	result, err = r.handleDelete(ctx, req)
-
-	// Stop the reconciliation if needed.
-	if subreconciler.ShouldHaltOrRequeue(result, err) {
-		return subreconciler.Evaluate(result, err)
-	}
-
-	// Run the reconcileDeployment subreconciler
-	result, err = r.reconcileDeployment(ctx, req)
-
-	// Stop the reconciliation if needed.
-	if subreconciler.ShouldHaltOrRequeue(result, err) {
-		return subreconciler.Evaluate(result, err)
-	}
-
-	// Run the updateStatus subreconciler
-	result, err = r.updateStatus(ctx, req)
-
-	// Stop the reconciliation if needed.
-	if subreconciler.ShouldHaltOrRequeue(result, err) {
-		return subreconciler.Evaluate(result, err)
+	// Run all subreconcilers sequentially
+	for _, f := range subreconcilersForMemcached {
+		if r, err := f(ctx, req); subreconciler.ShouldHaltOrRequeue(r, err) {
+			return subreconciler.Evaluate(r, err)
+		}
 	}
 
 	return ctrl.Result{}, nil
